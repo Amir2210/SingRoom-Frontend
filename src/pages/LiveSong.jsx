@@ -13,6 +13,7 @@ import {
 import { AppHeader } from '../components/AppHeader'
 
 const FLOATING_NOTES = ['♪', '♫', '♬', '🎵', '🎶', '♩', '🎸', '🎤']
+const VIZ_BARS = Array.from({ length: 28 })
 
 export function LiveSong() {
   const selectedSong = useSelector((storeState) => storeState.systemModule.songSelected)
@@ -77,7 +78,7 @@ export function LiveSong() {
   function togglePlay() {
     const audio = audioRef.current
     if (!audio) return
-    if (audio.paused) audio.play().catch(() => {})
+    if (audio.paused) audio.play().catch(() => { })
     else audio.pause()
   }
 
@@ -142,14 +143,21 @@ export function LiveSong() {
             {hasLyrics ? (
               <SongLyrics song={selectedSong.lyrics} userInstrument="vocals" fontSize={26} />
             ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-5 text-center">
-                <span className="party-note-big">🎶</span>
-                <div>
-                  <h2 className="text-2xl font-black text-white sm:text-3xl">No lyrics for this one</h2>
-                  <p className="mt-2 text-zinc-400">Close your eyes and vibe to the music.</p>
-                </div>
-                <div className="flex items-end gap-1.5" style={{ height: '40px' }}>
-                  <span className="eq-bar" /><span className="eq-bar" /><span className="eq-bar" /><span className="eq-bar" /><span className="eq-bar" />
+              <div className="flex h-full flex-col items-center justify-center gap-6">
+                <span className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                  Now playing
+                </span>
+                <div className={`visualizer ${isPlaying ? '' : 'is-paused'}`} aria-hidden="true">
+                  {VIZ_BARS.map((_, i) => (
+                    <span
+                      key={i}
+                      className="viz-bar"
+                      style={{
+                        animationDelay: `${(i % 7) * 0.12}s`,
+                        animationDuration: `${0.8 + (i % 5) * 0.18}s`,
+                      }}
+                    />
+                  ))}
                 </div>
               </div>
             )}
@@ -184,7 +192,7 @@ export function LiveSong() {
             ▶
           </span>
           <span className="text-xl font-bold text-white">Tap to play</span>
-          <span className="text-sm text-zinc-400">Your browser blocked autoplay — tap anywhere to start the music.</span>
+          <span className="text-sm text-zinc-400">Your browser blocked autoplay tap anywhere to start the music.</span>
         </button>
       )}
     </section>

@@ -1,6 +1,14 @@
-import { Link } from 'react-router'
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router'
+import { toast } from 'react-toastify'
 import { FiUserPlus, FiUsers, FiClock, FiSearch, FiPlay, FiMonitor } from 'react-icons/fi'
 import { AppHeader } from '../components/AppHeader'
+import { login } from '../store/actions/user.actions'
+
+const DEMO_USERS = {
+  admin: { username: 'admin', password: 'admin123' },
+  singer: { username: 'singer', password: 'singer123' },
+}
 
 const STEPS = [
   {
@@ -35,6 +43,22 @@ const STEPS = [
 ]
 
 export function HomeIndex() {
+  const [demoLoading, setDemoLoading] = useState(null)
+  const navigate = useNavigate()
+
+  async function onDemoLogin(role) {
+    if (demoLoading) return
+    try {
+      setDemoLoading(role)
+      const user = await login(DEMO_USERS[role])
+      navigate(user.isAdmin ? '/admin-search-song-page' : '/waiting-room-page')
+    } catch {
+      toast.error('Demo login failed')
+    } finally {
+      setDemoLoading(null)
+    }
+  }
+
   return (
     <section className="page pb-20">
       <AppHeader />
@@ -149,6 +173,30 @@ export function HomeIndex() {
                     Pick a song as the admin and watch the singer's screen jump to the live page instantly.
                   </li>
                 </ol>
+
+                <div className="mt-6 border-t border-white/10 pt-6">
+                  <p className="text-sm font-semibold text-white">Skip the sign-up and jump in with a demo account:</p>
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    <button
+                      onClick={() => onDemoLogin('admin')}
+                      disabled={!!demoLoading}
+                      className="btn-primary"
+                    >
+                      {demoLoading === 'admin' ? 'Entering…' : 'Enter as demo admin'}
+                    </button>
+                    <button
+                      onClick={() => onDemoLogin('singer')}
+                      disabled={!!demoLoading}
+                      className="btn-ghost"
+                    >
+                      {demoLoading === 'singer' ? 'Entering…' : 'Enter as demo singer'}
+                    </button>
+                  </div>
+                  <p className="mt-3 text-xs text-zinc-500">
+                    Tip: open this page in two browsers and click a different button in each to see the live sync.
+                    Credentials are admin / admin123 and singer / singer123.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
