@@ -1,117 +1,118 @@
-import { useState } from 'react'
-import { songsData } from '../data/song.data'
-import { logout, setSong } from '../store/actions/user.actions'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'react-toastify'
+import { songService } from '../services/song.service'
+import { setSong } from '../store/actions/user.actions'
+import { SOCKET_EVENT_PARTICIPANTS, socketService } from '../services/socket.service'
+import { AppHeader } from '../components/AppHeader'
+import { Participants } from '../components/Participants'
+
 export function AdminSearchSong() {
   const [search, setSearch] = useState('')
   const [results, setResults] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSelecting, setIsSelecting] = useState(false)
+  const [participants, setParticipants] = useState(socketService.getParticipants())
   const navigate = useNavigate()
 
-  const handleSearch = (query) => {
-    setSearch(query)
-    if (!query) {
-      setResults([])
-      return
-    }
+  useEffect(() => {
+    socketService.on(SOCKET_EVENT_PARTICIPANTS, setParticipants)
+    return () => socketService.off(SOCKET_EVENT_PARTICIPANTS, setParticipants)
+  }, [])
 
-    const lowerQuery = query.toLowerCase() // ממיר את החיפוש לאותיות קטנות
-    const filteredSongs = songsData
-      .map(song => {
-        const titleMatch = song.title.toLowerCase().includes(lowerQuery) // בדיקת שם השיר
-        const artistMatch = song.artist.toLowerCase().includes(lowerQuery) // בדיקת שם האמן
-
-        const matchedLines = song.lyrics
-          .map(line => line.filter(word => word.lyrics.toLowerCase().includes(lowerQuery))) // מחפש מילים בשיר
-          .filter(line => line.length > 0) // מסנן שורות ריקות
-
-        if (titleMatch || artistMatch || matchedLines.length > 0) {
-          return {
-            title: song.title,
-            artist: song.artist,
-            preview: matchedLines.flat().map(word => word.lyrics).slice(0, 6).join(' '), // מציג 6 מילים ראשונות
-            imgUrl: song.imgUrl,
-            fullSong: song.lyrics
-          }
-        }
-        return null
-      })
-      .filter(song => song !== null) // מסנן תוצאות ריקות
-
-    setResults(filteredSongs)
-  }
-
+  // Debounced search against the backend song API.
+  useEffect(() => {
+    const timeoutId = setTimeout(async () => {
+      setIsLoading(true)
+      try {
+        const songs = await songService.query(search)
+        setResults(songs)
+      } catch {
+        toast.error('Failed to load songs')
+      } finally {
+        setIsLoading(false)
+      }
+    }, 250)
+    return () => clearTimeout(timeoutId)
+  }, [search])
 
   async function onSetSong(song) {
+    if (isSelecting) return
     try {
-      await setSong(song, true)
+      setIsSelecting(true)
+      // Attach playable audio + lyrics before broadcasting the song to everyone.
+      const fullSong = await songService.enrich(song)
+      await setSong(fullSong, true)
       navigate('/live-song-page')
-    } catch (error) {
-      console.log('error:', error)
-    }
-  }
-
-  async function onLogout() {
-    try {
-      await logout()
-      toast.success(`logged out successfully`)
-      navigate('/')
-    } catch (err) {
-      console.log('err:', err)
-      toast.error(`failed to logged out`)
+    } catch {
+      toast.error('Failed to select song')
+    } finally {
+      setIsSelecting(false)
     }
   }
 
   return (
-    <section className='main-bg min-h-screen'>
-      <div className="small-container sm:big-container">
-        <div className='navbar py-6'>
-          <div className='text-4xl secondary-bg flex text-white font-mono font-bold size-14 justify-center items-center rounded-lg'>S</div>
-          <div className='ml-4 text-3xl font-bold tracking-wide text-white'>SingRoom</div>
-          <button onClick={onLogout} className='text-2xl capitalize ml-auto secondary-bg flex text-white font-semibold justify-center items-center rounded-lg p-2'>logout</button>
-        </div>
-
-        <div className='grid sm:grid-cols-2 gap-10 mt-5 sm:mt-20 text-[#B3B3B3]'>
-          <div>
-            <h1 className='text-5xl sm:text-6xl font-bold tracking-wide capitalize mb-6'>
-              Search any <span className='secondary-txt'>song...</span>
-            </h1>
-            <label className="input input-bordered flex items-center gap-2">
-              <input
-                type="text"
-                className="grow text-black"
-                placeholder="Search"
-                value={search}
-                onChange={(e) => handleSearch(e.target.value)}
-              />
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 opacity-70">
-                <path fillRule="evenodd" d="M9.965 11.026a5 5 0 1 1 1.06-1.06l2.755 2.754a.75.75 0 1 1-1.06 1.06l-2.755-2.754ZM10.5 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z" clipRule="evenodd" />
-              </svg>
-            </label>
-
-            {/* תוצאות חיפוש */}
-            <div className="mt-5">
-              {results.length > 0 ? (
-                results.map((song, index) => (
-                  <div onClick={() => onSetSong(song)} key={index} className="bg-gray-800 p-4 rounded-lg mb-3 flex justify-between items-center cursor-pointer">
-                    <div className=''>
-                      <h2 className="text-white font-bold text-lg">{song.title}</h2>
-                      <p className="text-gray-400 text-sm">{song.preview}...</p>
-                    </div>
-                    <div className='flex gap-2 items-center'>
-                      <p>{song.artist}</p>
-                      <img className='size-16' src={song.imgUrl} alt="song picture" />
-                    </div>
-                  </div>
-                ))
-              ) : search ? (
-                <p className="text-gray-500 mt-3">No results found</p>
-              ) : null}
+    <section className="page">
+      {isSelecting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="glass-card flex flex-col items-center gap-5 text-center animate-rise">
+            <div className="flex items-end gap-1.5" style={{ height: '40px' }}>
+              <span className="eq-bar" /><span className="eq-bar" /><span className="eq-bar" /><span className="eq-bar" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-white">Setting up the song for the band…</h2>
+              <p className="mt-1 text-sm text-zinc-400">Loading lyrics and audio. Everyone joins in a moment.</p>
             </div>
           </div>
+        </div>
+      )}
+      <AppHeader />
+      <div className="shell pb-16">
+        <div className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <img className='size-48 sm:size-full' src="https://res.cloudinary.com/dxm0sqcfp/image/upload/v1742741494/jamoveo/undraw_happy-music_na4p_ir0kkh.svg" alt="admin search song ilustration" />
+            <h1 className="text-4xl font-black tracking-tight sm:text-5xl">
+              Pick a <span className="secondary-txt">song</span>
+            </h1>
+            <p className="mt-2 text-zinc-400">Search the library — everyone joins instantly.</p>
           </div>
+          <Participants participants={participants} compact />
+        </div>
+
+        <label className="field mt-8">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M9.965 11.026a5 5 0 1 1 1.06-1.06l2.755 2.754a.75.75 0 1 1-1.06 1.06l-2.755-2.754ZM10.5 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z" clipRule="evenodd" /></svg>
+          <input
+            type="text"
+            placeholder="Search by title or artist…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            autoFocus
+          />
+        </label>
+
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          {isLoading ? (
+            <p className="text-zinc-500">Loading…</p>
+          ) : results.length > 0 ? (
+            results.map((song) => (
+              <button
+                key={song._id}
+                onClick={() => onSetSong(song)}
+                disabled={isSelecting}
+                className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-left transition-all hover:-translate-y-0.5 hover:border-[#1DB954]/50 hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <img className="size-16 rounded-xl object-cover" src={song.imgUrl} alt={song.title} />
+                <div className="min-w-0 flex-1">
+                  <h2 className="truncate font-bold text-white">{song.title}</h2>
+                  <p className="truncate text-sm text-zinc-400">{song.artist}</p>
+                </div>
+                <span className="rounded-lg bg-[#1DB954]/15 px-3 py-1.5 text-sm font-semibold text-[#1ed760] opacity-0 transition-opacity group-hover:opacity-100">
+                  {isSelecting ? 'Loading…' : 'Play ▸'}
+                </span>
+              </button>
+            ))
+          ) : (
+            <p className="text-zinc-500">No songs found.</p>
+          )}
         </div>
       </div>
     </section>

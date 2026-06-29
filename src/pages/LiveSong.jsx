@@ -1,123 +1,192 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
-import hey_jude from '../data/hey_jude.mp3'
-import veech_shelo from '../data/veech_shelo.mp3'
 import { useSelector } from 'react-redux'
-import { SongLyrics } from '../components/SongLyrics'
-import { goBackPickSong } from '../store/actions/user.actions'
-import { SOCKET_EVENT_ADMIN_SEARCH_PICK_NEW_SONG } from '../services/socket.service'
 import { toast } from 'react-toastify'
+import { SongLyrics } from '../components/SongLyrics'
+import { Participants } from '../components/Participants'
+import { goBackPickSong, setSong } from '../store/actions/user.actions'
+import {
+  SOCKET_EVENT_ADMIN_SEARCH_PICK_NEW_SONG,
+  SOCKET_EVENT_PARTICIPANTS,
+  socketService,
+} from '../services/socket.service'
+import { AppHeader } from '../components/AppHeader'
+
+const FLOATING_NOTES = ['♪', '♫', '♬', '🎵', '🎶', '♩', '🎸', '🎤']
 
 export function LiveSong() {
   const selectedSong = useSelector((storeState) => storeState.systemModule.songSelected)
-  const userInstrument = useSelector((storeState) => storeState.userModule.user.instrument)
-  const isAdmin = useSelector((storeState) => storeState.userModule.user.isAdmin)
+  const user = useSelector((storeState) => storeState.userModule.user)
   const navigate = useNavigate()
 
   const audioRef = useRef(null)
-  const scrollRef = useRef(null)
-  const [isAutoScroll, setIsAutoScroll] = useState(false)
-  const scrollIntervalRef = useRef(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false)
+  const [participants, setParticipants] = useState(socketService.getParticipants())
+
+  const isAdmin = user?.isAdmin
+  const hasSong = selectedSong && selectedSong.lyrics
+  const hasLyrics =
+    Array.isArray(selectedSong?.lyrics) &&
+    selectedSong.lyrics.some((line) => line.length > 0)
+
+  // Reconnect on refresh: pull the live song from the cached session state.
+  useEffect(() => {
+    if (!hasSong) {
+      const current = socketService.getCurrentSong()
+      if (current) {
+        setSong(current, false)
+      } else {
+        navigate(isAdmin ? '/admin-search-song-page' : '/waiting-room-page')
+      }
+    }
+  }, [])
 
   useEffect(() => {
     socketService.on(SOCKET_EVENT_ADMIN_SEARCH_PICK_NEW_SONG, onAdminPauseLive)
-
-    if (audioRef.current) {
-      const playPromise = audioRef.current.play()
-      if (playPromise !== undefined) {
-        playPromise.catch((error) => console.log('Auto-play failed:', error))
-      }
-    }
-
+    socketService.on(SOCKET_EVENT_PARTICIPANTS, setParticipants)
     return () => {
       socketService.off(SOCKET_EVENT_ADMIN_SEARCH_PICK_NEW_SONG, onAdminPauseLive)
-      stopAutoScroll()
+      socketService.off(SOCKET_EVENT_PARTICIPANTS, setParticipants)
     }
-  }, [selectedSong])
+  }, [])
+
+  // Auto-play the audio as soon as it's available. Browsers block sound without a
+  // user gesture, so on rejection we surface a one-tap "Tap to play" overlay.
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio || !selectedSong?.audioUrl) return
+    audio.play()
+      .then(() => setAutoplayBlocked(false))
+      .catch(() => setAutoplayBlocked(true))
+  }, [selectedSong?.audioUrl])
 
   function onAdminPauseLive() {
-    navigate('/waiting-room-page')
+    if (!isAdmin) navigate('/waiting-room-page')
   }
 
   async function onGoBackPickSong() {
     try {
       await goBackPickSong()
       navigate('/admin-search-song-page')
-    } catch (error) {
+    } catch {
       toast.error('Failed to go back to pick a new song')
     }
   }
 
-  function toggleAutoScroll() {
-    if (isAutoScroll) {
-      stopAutoScroll()
-    } else {
-      startAutoScroll()
-    }
+  function togglePlay() {
+    const audio = audioRef.current
+    if (!audio) return
+    if (audio.paused) audio.play().catch(() => {})
+    else audio.pause()
   }
 
-  function startAutoScroll() {
-    if (scrollRef.current) {
-      scrollIntervalRef.current = setInterval(() => {
-        // Scroll the container down by 1px
-        scrollRef.current.scrollBy({ top: 1, behavior: 'smooth' })
-      }, 50) // Adjust the scroll speed by changing the interval time
-      setIsAutoScroll(true)
-    }
+  function startFromOverlay() {
+    setAutoplayBlocked(false)
+    audioRef.current?.play().catch(() => setAutoplayBlocked(true))
   }
 
-  function stopAutoScroll() {
-    if (scrollIntervalRef.current) {
-      clearInterval(scrollIntervalRef.current)
-      scrollIntervalRef.current = null
-      setIsAutoScroll(false)
-    }
-  }
+  if (!hasSong) return null
 
   return (
-    <section className='main-bg' ref={scrollRef} style={{ maxHeight: '100vh', overflowY: 'auto' }}>
-      <div className="small-container sm:big-container">
-        <div className='navbar py-6'>
-          <div className='text-4xl secondary-bg flex text-white font-mono font-bold size-14 justify-center items-center rounded-lg'>S</div>
-          <div className='ml-4 text-3xl font-bold tracking-wide text-white'>SingRoom</div>
+    <section className="party-stage flex h-screen flex-col overflow-hidden">
+      {/* Animated background + floating notes */}
+      <div className="party-bg" aria-hidden="true" />
+      <div className="party-notes" aria-hidden="true">
+        {FLOATING_NOTES.map((note, i) => (
+          <span key={i} className="party-note" style={{ left: `${8 + i * 11}%`, animationDelay: `${i * 1.3}s`, animationDuration: `${9 + (i % 4) * 2}s` }}>
+            {note}
+          </span>
+        ))}
+      </div>
+
+      <div className="relative z-10 flex h-full flex-col">
+        <AppHeader />
+
+        {selectedSong.audioUrl && (
+          <audio
+            ref={audioRef}
+            src={selectedSong.audioUrl}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onEnded={() => setIsPlaying(false)}
+            preload="auto"
+          />
+        )}
+
+        {/* Now-playing hero */}
+        <div className="shell flex flex-col items-center gap-4 pb-2 text-center">
+          <div className="album-wrap">
+            <div className={`album-ring ${isPlaying ? 'is-spinning' : ''}`} />
+            {selectedSong.imgUrl ? (
+              <img className="album-art" src={selectedSong.imgUrl} alt={selectedSong.title} />
+            ) : (
+              <div className="album-art flex items-center justify-center text-5xl">🎵</div>
+            )}
+            <div className="album-eq">
+              <span className="eq-bar" /><span className="eq-bar" /><span className="eq-bar" /><span className="eq-bar" />
+            </div>
+          </div>
+
+          <div>
+            <h1 className="party-title text-3xl font-black sm:text-4xl">{selectedSong.title}</h1>
+            <p className="text-lg secondary-txt">{selectedSong.artist}</p>
+          </div>
+
+          <Participants participants={participants} compact />
         </div>
-        <div className='grid sm:grid-cols-2 gap-10 mt-5 sm:mt-20 text-[#B3B3B3]'>
-          <div>
-            <div className='flex items-center mb-6'>
-              <p className='text-2xl sm:text-3xl font-bold tracking-wide capitalize pr-1'>Now Playing:</p>
-              <p className='font-bold capitalize tracking-wide text-3xl sm:text-4xl secondary-txt'>{selectedSong.title}</p>
-            </div>
-            <div className='flex items-center mb-6'>
-              <p className='text-2xl sm:text-3xl font-bold tracking-wide capitalize pr-1'>By:</p>
-              <p className='font-bold capitalize tracking-wide text-3xl sm:text-4xl secondary-txt'>{selectedSong.artist}</p>
-            </div>
-            <div className='mb-6'>
-              <img className='size-24' src={selectedSong.imgUrl} alt="" />
-            </div>
-            {isAdmin &&
-              <button onClick={onGoBackPickSong} className='btn text-white text-lg secondary-bg capitalize border-none'>
-                Pick a new song
+
+        {/* Lyrics */}
+        <div className="shell relative flex-1 overflow-hidden pb-32">
+          <div className="lyrics-scroll glass-card h-full overflow-y-auto text-center animate-rise">
+            {hasLyrics ? (
+              <SongLyrics song={selectedSong.lyrics} userInstrument="vocals" fontSize={26} />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-5 text-center">
+                <span className="party-note-big">🎶</span>
+                <div>
+                  <h2 className="text-2xl font-black text-white sm:text-3xl">No lyrics for this one</h2>
+                  <p className="mt-2 text-zinc-400">Close your eyes and vibe to the music.</p>
+                </div>
+                <div className="flex items-end gap-1.5" style={{ height: '40px' }}>
+                  <span className="eq-bar" /><span className="eq-bar" /><span className="eq-bar" /><span className="eq-bar" /><span className="eq-bar" />
+                </div>
+              </div>
+            )}
+          </div>
+          {hasLyrics && <div className="lyrics-fade" aria-hidden="true" />}
+        </div>
+
+        {/* Minimal control bar */}
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex justify-center p-4">
+          <div className="pointer-events-auto flex items-center gap-3 rounded-2xl border border-white/10 bg-black/70 px-5 py-3 backdrop-blur-xl">
+            {selectedSong.audioUrl && (
+              <button onClick={togglePlay} className="btn-primary">
+                {isPlaying ? '❚❚ Pause' : '▶ Play'}
               </button>
-            }
-          </div>
-          <div>
-            <audio ref={audioRef} src={selectedSong.title === 'Hey Jude' ? hey_jude : veech_shelo} />
-          </div>
-          <div>
-            <SongLyrics song={selectedSong.fullSong} userInstrument={userInstrument} />
-          </div>
-          <div>
-            <img className='size-48 sm:size-full'
-              src="https://res.cloudinary.com/dxm0sqcfp/image/upload/v1742727170/jamoveo/einlrck60guxxm8hd7jd.svg"
-              alt="playing and singing song illustration" />
+            )}
+            {isAdmin && (
+              <button onClick={onGoBackPickSong} className="btn-ghost">
+                Pick new song
+              </button>
+            )}
           </div>
         </div>
       </div>
-      <button
-        onClick={toggleAutoScroll}
-        className="fixed bottom-6 right-6 secondary-bg text-white text-xl p-4 rounded-full shadow-lg transition">
-        {isAutoScroll ? 'Stop Scrolling' : 'Start Scrolling'}
-      </button>
+
+      {/* Autoplay fallback */}
+      {selectedSong.audioUrl && autoplayBlocked && (
+        <button
+          onClick={startFromOverlay}
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-5 bg-black/70 backdrop-blur-sm"
+        >
+          <span className="flex size-20 items-center justify-center rounded-full bg-gradient-to-br from-[#1ed760] to-[#169c45] text-3xl text-white shadow-[0_8px_24px_rgba(29,185,84,0.45)]">
+            ▶
+          </span>
+          <span className="text-xl font-bold text-white">Tap to play</span>
+          <span className="text-sm text-zinc-400">Your browser blocked autoplay — tap anywhere to start the music.</span>
+        </button>
+      )}
     </section>
   )
 }
