@@ -20,3 +20,13 @@ SingRoomis a **web application** that enables musicians to **rehearse together r
 - **Real-Time Communication**: Socket.io  
 - **Authentication**: Cookies, JWT  
 - **State Management**: Redux
+<img width="1900" height="733" alt="singroom" src="https://github.com/user-attachments/assets/4f0d8d33-b96e-4652-b08b-9f6a0e8870a7" />
+<img width="1887" height="717" alt="singroom1" src="https://github.com/user-attachments/assets/f28a51be-a38a-4f46-8857-aa86f8eee493" />
+<img width="1902" height="937" alt="singroom2" src="https://github.com/user-attachments/assets/40619cf3-b1bf-4100-8055-758c378d21ae" />
+<img width="1894" height="893" alt="singroom3" src="https://github.com/user-attachments/assets/c8759bad-da63-470b-8ce6-ba0a7a2389cc" />
+<img width="1914" height="944" alt="singroom4" src="https://github.com/user-attachments/assets/d5dad096-facd-4185-a4c8-419fb37f99c6" />
+<img width="1913" height="935" alt="singroom5" src="https://github.com/user-attachments/assets/3a7dd1bb-f87e-4644-a1eb-8cf084344263" />
+
+
+
+
